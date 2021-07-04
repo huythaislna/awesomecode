@@ -31,9 +31,8 @@ int main(int argc, char const *argv[]) {
     file = fopen(filename.c_str(), "ab");
 
     char buffer[1024] = {0};
-    char header[10000] = {0};
     string request = createGETRequest(hostname, path);
-    string body = "";
+    int header = 1;
 
     if (port == 443) {
         SSL_load_error_strings ();
@@ -48,23 +47,45 @@ int main(int argc, char const *argv[]) {
             abort(); // handle error
         }
         SSL_write(conn, request.c_str(), request.length());
-        //read header
-        //valread = SSL_read(conn, header, sizeof header);
         do {
                 valread = SSL_read(conn, buffer, sizeof(buffer));
-                fwrite(buffer , valread , 1, file);
+                if (header == 1) {
+                    char* content = strstr(buffer, "\r\n\r\n");
+                    if (content != NULL) {
+                        header = 0;
+                        string s2(buffer);
+                        size_t p = s2.find("\r\n\r\n");
+                        if (s2.find("Transfer-Encoding: chunked") != string::npos) {
+                            fwrite(buffer+p + 8, valread-p-8, 1, file);
+                        } else fwrite(buffer+p+4, valread-p-4, 1, file);
+                    }
+                }
+                else fwrite(buffer , valread , 1, file);
+
+                //fwrite(buffer , valread , 1, file);
                 //printf("Received: \"%s\"\n", buffer);
         } while (valread > 0);
         SSL_CTX_free(ssl_ctx);
         SSL_free(conn); 
     } else {
         send(sock , request.c_str() , request.length() , 0);
-        //read header
-        //valread = read( sock , header, sizeof header);
         do {
-            
-            valread = read( sock , buffer, 1024);
-            fwrite(buffer , valread , 1, file);
+            valread = read( sock , buffer, sizeof(buffer));
+            if (header == 1) {
+                char* content = strstr(buffer, "\r\n\r\n");
+                if (content != NULL) {
+                    header = 0;
+                    string s2(buffer);
+                    size_t p = s2.find("\r\n\r\n");
+                    cout << s2;
+                    if (s2.find("Transfer-Encoding: chunked") != string::npos) {
+                        fwrite(buffer+p + 8, valread-p-8, 1, file);
+                    } else fwrite(buffer+p+4, valread-p-4, 1, file);
+                }
+            }
+            else fwrite(buffer , valread , 1, file);
+            //valread = read( sock , buffer, 1024);
+            //fwrite(buffer , valread , 1, file);
         } while (valread > 0);        
     }
 
@@ -121,7 +142,7 @@ string createGETRequest(string hostname, string path) {
     stringstream ss;
     ss << "GET "<< path << " HTTP/1.1\r\n"
     << "Host: "<< hostname << "\r\n"
-    << "Accept: text/html\r\n"
+    << "Accept: application/json\r\n"
     << "Connection: close\r\n"
     << "\r\n\r\n";
     
